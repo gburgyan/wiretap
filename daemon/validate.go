@@ -11,7 +11,16 @@ import (
 
 func (ws *WiretapService) ValidateResponse(
 	request *model.Request,
-	returnedResponse *http.Response) []*errors.ValidationError {
+	returnedResponse *http.Response) (resultErrors []*errors.ValidationError) {
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Construct a string from the error and add it to the validation errors.
+			resultErrors = append(resultErrors, &errors.ValidationError{
+				Message: "Error validating response: " + r.(string),
+			})
+		}
+	}()
 
 	var validationErrors []*errors.ValidationError
 
@@ -44,7 +53,16 @@ func (ws *WiretapService) ValidateResponse(
 
 func (ws *WiretapService) ValidateRequest(
 	modelRequest *model.Request,
-	httpRequest *http.Request) []*errors.ValidationError {
+	httpRequest *http.Request) (resultErrors []*errors.ValidationError) {
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Construct a string from the error and add it to the validation errors.
+			resultErrors = append(resultErrors, &errors.ValidationError{
+				Message: "Error validating request: " + r.(string),
+			})
+		}
+	}()
 
 	var validationErrors, cleanedErrors []*errors.ValidationError
 
