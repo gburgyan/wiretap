@@ -3,8 +3,15 @@ wiretap
 
 # UI build
 ui/dist
+ui/assets
 ui/node_modules
 
 # Jetbrains files
 .idea/
 
+# VSCode
+.vscode/
+
+# Local run output files
+wiretap-report.json
+__debug*

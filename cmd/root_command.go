@@ -7,6 +7,11 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/url"
+	"os"
+	"path/filepath"
+
 	"github.com/pb33f/harhar"
 	"github.com/pb33f/libopenapi"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
@@ -16,10 +21,6 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
-	"log/slog"
-	"net/url"
-	"os"
-	"path/filepath"
 )
 
 var (
@@ -62,6 +63,9 @@ var (
 			var hardErrorCode int
 			var hardErrorReturnCode int
 
+			// static mock dir
+			var staticMockDir string
+
 			// mock mode
 			var mockMode bool
 			var useAllMockResponseFields bool
@@ -83,6 +87,7 @@ var (
 			harWhiteList, _ := cmd.Flags().GetStringArray("har-allow")
 
 			debug, _ := cmd.Flags().GetBool("debug")
+			staticMockDir, _ = cmd.Flags().GetString("static-mock-dir")
 			mockMode, _ = cmd.Flags().GetBool("mock-mode")
 			useAllMockResponseFields, _ = cmd.Flags().GetBool("enable-all-mock-response-fields")
 			hardError, _ = cmd.Flags().GetBool("hard-validation")
@@ -180,6 +185,11 @@ var (
 				if config.Spec != "" {
 					spec = config.Spec
 				}
+				if len(staticMockDir) != 0 {
+					if len(config.StaticMockDir) == 0 {
+						config.StaticMockDir = staticMockDir
+					}
+				}
 				if mockMode {
 					if !config.MockMode {
 						config.MockMode = true
@@ -222,6 +232,11 @@ var (
 
 				pterm.Info.Println("No wiretap configuration located. Using defaults")
 				config.StaticIndex = staticIndex
+				if len(staticMockDir) != 0 {
+					if len(config.StaticMockDir) == 0 {
+						config.StaticMockDir = staticMockDir
+					}
+				}
 				if mockMode {
 					config.MockMode = true
 				}
@@ -252,7 +267,7 @@ var (
 				pterm.Println()
 			}
 
-			if mockMode && spec == "" {
+			if (mockMode || len(config.MockModeList) > 0) && spec == "" {
 				pterm.Println()
 				pterm.Error.Println("Cannot enable mock mode, no OpenAPI specification provided!\n" +
 					"Please provide a path to an OpenAPI specification using the --spec or -s flags.\n" +
@@ -326,10 +341,10 @@ var (
 			}
 
 			// configure hard errors if set
-			if config.HardErrors && config.HardErrorCode <= 0 {
+			if (config.HardErrors || len(config.HardErrorsList) > 0) && config.HardErrorCode <= 0 {
 				config.HardErrorCode = hardErrorCode
 			}
-			if config.HardErrors && config.HardErrorReturnCode <= 0 {
+			if (config.HardErrors || len(config.HardErrorsList) > 0) && config.HardErrorReturnCode <= 0 {
 				config.HardErrorReturnCode = hardErrorReturnCode
 			}
 
@@ -383,6 +398,16 @@ var (
 				printLoadedWebsockets(config.WebsocketConfigs)
 			}
 
+			if len(config.MockModeList) > 0 && !config.MockMode {
+				config.CompileMockModeList()
+				printLoadedMockModeList(config.MockModeList)
+			}
+
+			if len(config.HardErrorsList) > 0 && !config.HardErrors {
+				config.CompileHardErrorList()
+				printLoadedHardErrorList(config.MockModeList)
+			}
+
 			if len(config.IgnoreValidation) > 0 {
 				config.CompileIgnoreValidations()
 				printLoadedIgnoreValidationPaths(config.IgnoreValidation)
@@ -419,6 +444,13 @@ var (
 				pterm.Printf("❌  Hard validation mode enabled. HTTP error %s for requests and error %s for responses that "+
 					"fail to pass validation.\n",
 					pterm.LightRed(config.HardErrorCode), pterm.LightRed(config.HardErrorReturnCode))
+				pterm.Println()
+			}
+
+			// static mock dir
+			if len(config.StaticMockDir) != 0 {
+				pterm.Printf("Ⓜ️ %s. Requests matching mock definitions in the static-mock-dir will return mocked responses.\n",
+					pterm.LightCyan("Static mock directory defined"))
 				pterm.Println()
 			}
 
@@ -678,6 +710,7 @@ func Execute(version, commit, date string, fs embed.FS) {
 	rootCmd.Flags().BoolP("hard-validation", "e", false, "Return a HTTP error for non-compliant request/response")
 	rootCmd.Flags().IntP("hard-validation-code", "q", 400, "Set a custom http error code for non-compliant requests when using the hard-error flag")
 	rootCmd.Flags().IntP("hard-validation-return-code", "y", 502, "Set a custom http error code for non-compliant responses when using the hard-error flag")
+	rootCmd.Flags().StringP("static-mock-dir", "", "", "Directory containing static mock definitions. All requests matching these definitions will return mocked responses.")
 	rootCmd.Flags().BoolP("mock-mode", "x", false, "Run in mock mode, responses are mocked and no traffic is sent to the target API (requires OpenAPI spec)")
 	rootCmd.Flags().BoolP("enable-all-mock-response-fields", "o", true, "Enable usage of all property examples in mock responses. When set to false, only required field examples will be used.")
 	rootCmd.Flags().StringP("config", "c", "", "Location of wiretap configuration file to use (default is .wiretap in current directory)")
@@ -816,6 +849,26 @@ func printLoadedValidationAllowList(validationAllowList []string) {
 
 	for _, x := range validationAllowList {
 		pterm.Printf("👮 Paths matching '%s' will always have validation run, regardless of ignoreValidation settings\n", pterm.LightCyan(x))
+	}
+	pterm.Println()
+}
+
+func printLoadedMockModeList(mockModeList []string) {
+	pterm.Info.Printf("Loaded %d %s from mock mode list:\n", len(mockModeList),
+		shared.Pluralize(len(mockModeList), "path", "paths"))
+
+	for _, x := range mockModeList {
+		pterm.Printf("️Ⓜ️  Paths matching '%s' will have all responses %s.\n", x, pterm.LightMagenta("generated as mocks/simulations"))
+	}
+	pterm.Println()
+}
+
+func printLoadedHardErrorList(HardErrorList []string) {
+	pterm.Info.Printf("Loaded %d %s from hard validation list:\n", len(HardErrorList),
+		shared.Pluralize(len(HardErrorList), "path", "paths"))
+
+	for _, x := range HardErrorList {
+		pterm.Printf("️️❌ Paths matching '%s' will create HTTP %s errors for requests and %s errors for responses that fail to pass validation.\n", x, pterm.LightRed("400"), pterm.LightRed("502"))
 	}
 	pterm.Println()
 }

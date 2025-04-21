@@ -12,7 +12,7 @@ import (
 
 	"github.com/pb33f/libopenapi"
 	"github.com/pb33f/libopenapi-validator/helpers"
-	"github.com/pb33f/libopenapi/datamodel/high/v3"
+	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -285,7 +285,7 @@ func TestNewMockEngine_BuildResponse_SimpleValid_Pretty(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, status)
 	assert.Equal(t, "{\n  \"category\": \"shirts\",\n  \"description\": \"A t-shirt with the pb33f logo "+
-		"on it.\",\n  \"id\": \"d1404c5c-69bd-4cd2-a4cf-b47c79a30112\",\n  \"image\": \"https://pb33f.io/images/t-shirt.png\",\n "+
+		"on the front\",\n  \"id\": \"d1404c5c-69bd-4cd2-a4cf-b47c79a30112\",\n  \"image\": \"https://pb33f.io/images/t-shirt.png\",\n "+
 		" \"name\": \"pb33f t-shirt\",\n  \"price\": 19.99,\n  \"shortCode\": \"pb0001\"\n}", string(b))
 }
 
@@ -1100,17 +1100,26 @@ components:
 	assert.Equal(t, "robocop", decoded["name"])
 	assert.Equal(t, "perhaps the best cyberpunk movie ever made.", decoded["description"])
 
-	// Now see if html will work
+	// Now see if html will work with preferred header for second html example
 	request, _ = http.NewRequest(http.MethodGet, "https://api.pb33f.io/test", nil)
-	request.Header.Set(helpers.Preferred, "happyHtmlDays")
+	request.Header.Set(helpers.Preferred, "robocopInHtml")
 	request.Header.Set("Content-Type", "text/html")
 
 	b, status, err = me.GenerateResponse(request)
 
 	assert.NoError(t, err)
 	assert.Equal(t, 200, status)
-	assert.Equal(t, "<!DOCTYPE html><html lang=\"en\"><body><h1>Happy Days</h1</body></html>", string(b[:]))
+	assert.Equal(t, "<!DOCTYPE html><html lang=\"en\"><body><h1>Robo cop</h1</body></html>", string(b[:]))
 
+	// Now see if html will work w/ Accept header and no preferred
+	request, _ = http.NewRequest(http.MethodGet, "https://api.pb33f.io/test", nil)
+	request.Header.Set("Accept", "text/html")
+
+	b, status, err = me.GenerateResponse(request)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 200, status)
+	assert.Equal(t, "<!DOCTYPE html><html lang=\"en\"><body><h1>Happy Days</h1</body></html>", string(b[:]))
 }
 
 // https://github.com/pb33f/wiretap/issues/83
